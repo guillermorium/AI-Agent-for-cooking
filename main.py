@@ -15,17 +15,9 @@ class CookingAgent:
         )
         self.model_name = "openai/gpt-4.1"
 
-        # Set agent's tools
+        # Set agent's tools and attributes
+        self.setup_attributes()
         self.setup_tools()
-
-        # Ensure needed structure is OK
-        if not os.path.exists('recipes_history.json'):
-            with open("recipes_history.json", "w") as history:
-                history.write("{}")
-
-        # Reads history file (long-term memory)
-        with open('recipes_history.json', 'r') as f:
-            self.history = json.load(f)
 
         # Short-term memory
         self.current_session = [
@@ -41,17 +33,39 @@ class CookingAgent:
 
         pass
 
+    def setup_attributes(self):
+        # Long-term memory check
+        if not os.path.exists('recipes_history.json'):
+            with open("recipes_history.json", "w") as history:
+                history.write("{}")
+
+        # Reads history file (long-term memory)
+        with open('recipes_history.json', 'r') as f:
+            self.history = json.load(f)
+
+        # The recipe proposal
+        self.current_recipe = None
+        # Flag to check if the user likes the recipe proposal
+        self.recipe_idea = False
+
+        pass
+
     def setup_tools(self):
         self.tools = [
             {
                 "type": "function",
                 "function": {
                     "name": "recipe_response",
-                    "description": "Propose a final recipe idea following the desired structure",
+                    "description": "Propose a recipe idea following a fixed structure",
                     "parameters": {
                         "type": "object",
-                        "properties": {},
-                        "required": []
+                        "properties": {
+                            "current_recipe": {
+                                "type": "string",
+                                "description": "A recipe proposal to the user"
+                            }
+                        },
+                        "required": ["current_recipe"]
                     }
                 }
             }
@@ -60,8 +74,14 @@ class CookingAgent:
         pass
 
     def normal_response(self, prompt):
+        """
+        Main function to build a response for the user and to continue the conversation.
 
-        recipe_idea = False
+        param prompt: user's message
+        return response: agent's response
+            recipe_idea: flag to check the end of the conversation
+        """
+        self.recipe_idea = False
         # Saves user's prompt
         self.current_session.append(
             {
@@ -82,9 +102,11 @@ class CookingAgent:
             for tc in response.choices[0].message.tool_calls:
                 if tc.function.name == "recipe_response":
                     # Flag have control on the final recipe
-                    recipe_idea = True
-
-                    elaboration = self.recipe_response()
+                    self.recipe_idea = True
+                    # Get the proposal recipe
+                    self.current_recipe = json.loads(tc.function.arguments)["current_recipe"]
+                    # Build the response
+                    elaboration = self.recipe_response(self.current_recipe)
                     self.current_session.append(
                         {
                             "role": "tool",
@@ -92,19 +114,18 @@ class CookingAgent:
                             "content": elaboration
                         }
                     )
-                    return elaboration, recipe_idea
+                    return elaboration, self.recipe_idea
 
-        return response.choices[0].message.content, recipe_idea
+        return response.choices[0].message.content, self.recipe_idea
 
-    def recipe_response(self, language="spanish"):
+    def recipe_response(self, current_recipe: str, language="spanish"):
         # Builds the response
         response = self.client.chat.completions.create(
             model = self.model_name,
             messages = [
                 {
                 "role": "user",
-                "content": f"Explain me the recipe you are thinking about. You must structure the response into 4"
-                           f"parts:"
+                "content": f"Explain the recipe {current_recipe}. You must structure the response into 4 parts:"
                            f"- Introduction: Before listing all ingredients, you have to indicate how many people is the "
                            f"recipe for, how long would you be cooking and the difficulty of the recipe in a 5 stars scale."
                            f"- Ingredients:  Then, you have to list ingredients and the amount it is used."
@@ -121,7 +142,7 @@ class CookingAgent:
 
         return response.choices[0].message.content
 
-    def final_response(self):
+    def export_response(self):
         # Add the recipe to the json file
 
         # Export the response to PDF
@@ -142,14 +163,14 @@ class CookingAgent:
 
 if __name__ == "__main__":
     agent = CookingAgent()
-    recipe_idea = False
-    while True:
-        prompt_message = str(input("Tú: "))
 
-        if recipe_idea and prompt_message.lower() in ["hecho", "ok", "perfecto", "exportar"]:
-            agent.final_response()
+    while True:
+        prompt_message = str(input("Usuario: "))
+
+        if agent.recipe_idea and prompt_message.lower() in ["hecho", "ok", "perfecto", "exportar"]:
+            agent.export_response()
             break
 
-        response, recipe_idea = agent.normal_response(prompt_message)
+        response, agent.recipe_idea = agent.normal_response(prompt_message)
 
-        print("Agente: ", response, recipe_idea)
+        print("Agente: ", response)
