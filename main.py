@@ -1,6 +1,7 @@
 from openai import OpenAI
 import os
 import json
+from fpdf import FPDF
 
 class CookingAgent:
     def __init__(self):
@@ -62,7 +63,7 @@ class CookingAgent:
                         "properties": {
                             "current_recipe": {
                                 "type": "string",
-                                "description": "A recipe proposal to the user"
+                                "description": "The name of the recipe proposal to the user (maximum 5 words)"
                             }
                         },
                         "required": ["current_recipe"]
@@ -142,10 +143,29 @@ class CookingAgent:
 
         return response.choices[0].message.content
 
-    def export_response(self):
+    def export_response(self, mi_texto_receta):
         # Add the recipe to the json file
 
-        # Export the response to PDF
+        ## Export the response to PDF
+        pdf = FPDF()
+        pdf.add_page()
+
+        # 2. Set font (family, style, size...)
+        pdf.set_font("Helvetica", style="B", size=16)
+
+        # 3. Add text on cell (width, height, text, write on left...)
+        pdf.cell(0, 10, txt=self.current_recipe, ln=1)
+
+        # 4. Set body-file font
+        pdf.set_font("Helvetica", size=12)
+
+        # multi_cell for long paragraphs
+        texto_limpio = mi_texto_receta.encode('latin-1', 'replace').decode('latin-1')
+        pdf.multi_cell(0, 10, txt=texto_limpio)
+
+        # 5. Save as pdf
+        filename = self.current_recipe.encode('latin-1', 'replace').decode('latin-1') + ".pdf"
+        pdf.output(filename)
         pass
 
     def check_history(self):
@@ -168,7 +188,7 @@ if __name__ == "__main__":
         prompt_message = str(input("Usuario: "))
 
         if agent.recipe_idea and prompt_message.lower() in ["hecho", "ok", "perfecto", "exportar"]:
-            agent.export_response()
+            agent.export_response(agent.current_session[-1]["content"])
             break
 
         response, agent.recipe_idea = agent.normal_response(prompt_message)
